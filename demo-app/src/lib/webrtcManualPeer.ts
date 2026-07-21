@@ -20,7 +20,6 @@ export interface ManualPeerCallbacks {
   onStateChange: (snapshot: PeerSnapshot) => void;
   onRemoteStream: (stream: MediaStream | null) => void;
   onLocalSdp: (sdp: RTCSessionDescriptionInit) => void;
-  onLog: (message: string) => void;
 }
 
 export interface ManualPeerSession {
@@ -45,36 +44,28 @@ function readSnapshot(pc: RTCPeerConnection): PeerSnapshot {
   };
 }
 
-function waitForIceGatheringComplete(
-  pc: RTCPeerConnection,
-  onLog?: (message: string) => void,
-): Promise<void> {
+function waitForIceGatheringComplete(pc: RTCPeerConnection): Promise<void> {
   if (pc.iceGatheringState === 'complete') {
     return Promise.resolve();
   }
 
   return new Promise((resolve) => {
     let settled = false;
-    const finish = (reason: string) => {
+    const finish = () => {
       if (settled) return;
       settled = true;
       pc.removeEventListener('icegatheringstatechange', onChange);
       window.clearTimeout(timer);
-      onLog?.(reason);
       resolve();
     };
 
     const onChange = () => {
       if (pc.iceGatheringState === 'complete') {
-        finish('ICE gathering complete');
+        finish();
       }
     };
 
-    const timer = window.setTimeout(() => {
-      finish(
-        `ICE gathering timeout ${ICE_GATHER_TIMEOUT_MS}ms — копируем SDP как есть`,
-      );
-    }, ICE_GATHER_TIMEOUT_MS);
+    const timer = window.setTimeout(finish, ICE_GATHER_TIMEOUT_MS);
 
     pc.addEventListener('icegatheringstatechange', onChange);
   });
@@ -105,33 +96,20 @@ export function createManualPeer(options: {
 }): ManualPeerSession {
   const { role, localStream, callbacks } = options;
   const iceServers = options.iceServers ?? DEFAULT_ICE_SERVERS;
-  const { onStateChange, onRemoteStream, onLocalSdp, onLog } = callbacks;
+  const { onStateChange, onRemoteStream, onLocalSdp } = callbacks;
 
   const pc = new RTCPeerConnection({ iceServers });
 
   const notifyState = () => onStateChange(readSnapshot(pc));
 
-  pc.onconnectionstatechange = () => {
-    onLog(`connectionState → ${pc.connectionState}`);
-    notifyState();
-  };
-  pc.oniceconnectionstatechange = () => {
-    onLog(`iceConnectionState → ${pc.iceConnectionState}`);
-    notifyState();
-  };
-  pc.onicegatheringstatechange = () => {
-    onLog(`iceGatheringState → ${pc.iceGatheringState}`);
-    notifyState();
-  };
-  pc.onsignalingstatechange = () => {
-    onLog(`signalingState → ${pc.signalingState}`);
-    notifyState();
-  };
+  pc.onconnectionstatechange = notifyState;
+  pc.oniceconnectionstatechange = notifyState;
+  pc.onicegatheringstatechange = notifyState;
+  pc.onsignalingstatechange = notifyState;
 
   pc.ontrack = (event) => {
     const remote =
       event.streams[0] ?? new MediaStream(event.track ? [event.track] : []);
-    onLog(`ontrack: получен ${event.track.kind}`);
     onRemoteStream(remote);
   };
 
@@ -141,19 +119,14 @@ export function createManualPeer(options: {
     }
     for (const track of localStream.getTracks()) {
       pc.addTrack(track, localStream);
-      onLog(`addTrack: ${track.kind}`);
     }
-  } else {
-    onLog('viewer: ждём offer (камера на этом ПК не нужна)');
   }
 
   notifyState();
-  onLog(`PC создан (${role}), ICE servers: ${iceServers.length}`);
 
   return {
     role,
     stop: () => {
-      onLog('stop: pc.close()');
       pc.close();
       onRemoteStream(null);
       notifyState();
@@ -162,18 +135,15 @@ export function createManualPeer(options: {
       if (role !== 'sender') {
         throw new Error('createOffer только у sender');
       }
-      onLog('createOffer…');
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      onLog('setLocalDescription(offer), ждём ICE gathering…');
-      await waitForIceGatheringComplete(pc, onLog);
+      await waitForIceGatheringComplete(pc);
       const local = pc.localDescription;
       if (!local) {
         throw new Error('localDescription пуст после offer');
       }
       const payload: RTCSessionDescriptionInit = { type: local.type, sdp: local.sdp };
       onLocalSdp(payload);
-      onLog('offer готов (SDP + ICE candidates) — скопируйте и отправьте viewer');
       notifyState();
       return payload;
     },
@@ -181,20 +151,16 @@ export function createManualPeer(options: {
       if (role !== 'viewer') {
         throw new Error('acceptOffer только у viewer');
       }
-      onLog('setRemoteDescription(offer)…');
       await pc.setRemoteDescription(offer);
-      onLog('createAnswer…');
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
-      onLog('setLocalDescription(answer), ждём ICE gathering…');
-      await waitForIceGatheringComplete(pc, onLog);
+      await waitForIceGatheringComplete(pc);
       const local = pc.localDescription;
       if (!local) {
         throw new Error('localDescription пуст после answer');
       }
       const payload: RTCSessionDescriptionInit = { type: local.type, sdp: local.sdp };
       onLocalSdp(payload);
-      onLog('answer готов — скопируйте и верните sender');
       notifyState();
       return payload;
     },
@@ -202,9 +168,7 @@ export function createManualPeer(options: {
       if (role !== 'sender') {
         throw new Error('acceptAnswer только у sender');
       }
-      onLog('setRemoteDescription(answer)…');
       await pc.setRemoteDescription(answer);
-      onLog('answer применён — ждём connected / ontrack у viewer');
       notifyState();
     },
   };

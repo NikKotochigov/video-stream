@@ -17,10 +17,6 @@ const EMPTY_SNAPSHOT: PeerSnapshot = {
   connection: 'closed',
 };
 
-function formatTime(date: Date) {
-  return date.toLocaleTimeString('ru-RU', { hour12: false });
-}
-
 export default function Step5WebRTCManual() {
   const { stream } = useStream();
   const sessionRef = useRef<ManualPeerSession | null>(null);
@@ -32,14 +28,10 @@ export default function Step5WebRTCManual() {
   const [snapshot, setSnapshot] = useState<PeerSnapshot>(EMPTY_SNAPSHOT);
   const [localSdpText, setLocalSdpText] = useState('');
   const [remoteSdpText, setRemoteSdpText] = useState('');
-  const [logs, setLogs] = useState<string[]>([]);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const hasLiveVideo = stream?.getVideoTracks().some((t) => t.readyState === 'live') ?? false;
-
-  const appendLog = useCallback((message: string) => {
-    setLogs((prev) => [...prev.slice(-24), `${formatTime(new Date())} ${message}`]);
-  }, []);
 
   const stopSession = useCallback(() => {
     sessionRef.current?.stop();
@@ -60,33 +52,33 @@ export default function Step5WebRTCManual() {
           onStateChange: setSnapshot,
           onRemoteStream: setRemoteStream,
           onLocalSdp: (sdp) => setLocalSdpText(formatSessionDescription(sdp)),
-          onLog: appendLog,
         },
       });
       sessionRef.current = peer;
       setHasSession(true);
       return peer;
     },
-    [stream, appendLog],
+    [stream],
   );
 
   const changeRole = (next: PeerRole) => {
     if (next === role) return;
     stopSession();
     setRemoteSdpText('');
-    setLogs([]);
+    setError(null);
     setRole(next);
   };
 
   const createOffer = async () => {
     setBusy(true);
     setCopyStatus(null);
+    setError(null);
     try {
       stopSession();
       const peer = startPeer('sender');
       await peer.createOffer();
     } catch (err) {
-      appendLog(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? err.message : String(err));
       stopSession();
     } finally {
       setBusy(false);
@@ -96,6 +88,7 @@ export default function Step5WebRTCManual() {
   const acceptOfferCreateAnswer = async () => {
     setBusy(true);
     setCopyStatus(null);
+    setError(null);
     try {
       stopSession();
       const offer = parseSessionDescription(remoteSdpText);
@@ -105,7 +98,7 @@ export default function Step5WebRTCManual() {
       const peer = startPeer('viewer');
       await peer.acceptOfferAndCreateAnswer(offer);
     } catch (err) {
-      appendLog(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? err.message : String(err));
       stopSession();
     } finally {
       setBusy(false);
@@ -115,6 +108,7 @@ export default function Step5WebRTCManual() {
   const applyAnswer = async () => {
     setBusy(true);
     setCopyStatus(null);
+    setError(null);
     try {
       const session = sessionRef.current;
       if (!session || session.role !== 'sender') {
@@ -126,7 +120,7 @@ export default function Step5WebRTCManual() {
       }
       await session.acceptAnswer(answer);
     } catch (err) {
-      appendLog(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
@@ -160,17 +154,7 @@ export default function Step5WebRTCManual() {
       <header className="step-header">
         <p className="step-header__eyebrow">Шаг 5</p>
         <h2 className="step-header__title">WebRTC: два компьютера</h2>
-        <p className="step-header__desc">
-          Signaling руками: copy-paste offer/answer. Камера на Sender → просмотр на Viewer (одна
-          Wi‑Fi).
-        </p>
       </header>
-
-      <div className="alert alert--info">
-        Оба ПК в одной Wi‑Fi. На Sender: <code>npm run dev -- --host</code>, камера на{' '}
-        <strong>Шаге 1</strong>. Viewer открывает <code>http://&lt;IP-Sender&gt;:5173</code> — камера
-        ему не нужна.
-      </div>
 
       <div className="step-controls">
         <div className="preset-group" role="group" aria-label="Роль">
@@ -204,18 +188,7 @@ export default function Step5WebRTCManual() {
         </div>
       ) : null}
 
-      <p className="step-hint">
-        {role === 'sender' ? (
-          <>
-            1) Create offer → Copy → вставить на Viewer. 2) Вставить answer с Viewer → Apply answer.
-          </>
-        ) : (
-          <>
-            1) Вставить offer с Sender → Create answer. 2) Copy answer → вернуть Sender. Камера на
-            этом ПК не нужна.
-          </>
-        )}
-      </p>
+      {error ? <div className="alert alert--error">{error}</div> : null}
 
       <div className="dual-preview">
         <VideoPreview
@@ -299,45 +272,30 @@ export default function Step5WebRTCManual() {
         </div>
       </div>
 
-      <div className="step-grid">
-        <div className="info-panel">
-          <h3 className="info-panel__title">Peer state</h3>
-          <dl className="info-panel__list">
-            <div className="info-row">
-              <dt>role</dt>
-              <dd>{role}</dd>
-            </div>
-            <div className="info-row">
-              <dt>signaling</dt>
-              <dd>{snapshot.signaling}</dd>
-            </div>
-            <div className="info-row">
-              <dt>ice gathering</dt>
-              <dd>{snapshot.iceGathering}</dd>
-            </div>
-            <div className="info-row">
-              <dt>ice</dt>
-              <dd>{snapshot.ice}</dd>
-            </div>
-            <div className="info-row">
-              <dt>connection</dt>
-              <dd>{snapshot.connection}</dd>
-            </div>
-          </dl>
-        </div>
-
-        <div className="info-panel loopback-log">
-          <h3 className="info-panel__title">Log</h3>
-          {logs.length === 0 ? (
-            <p className="info-panel--empty">Действий пока нет</p>
-          ) : (
-            <ol className="loopback-log__list">
-              {logs.map((entry) => (
-                <li key={entry}>{entry}</li>
-              ))}
-            </ol>
-          )}
-        </div>
+      <div className="info-panel signaling-panel peer-state-panel">
+        <h3 className="info-panel__title">Peer state</h3>
+        <dl className="info-panel__list">
+          <div className="info-row">
+            <dt>role</dt>
+            <dd>{role}</dd>
+          </div>
+          <div className="info-row">
+            <dt>signaling</dt>
+            <dd>{snapshot.signaling}</dd>
+          </div>
+          <div className="info-row">
+            <dt>ice gathering</dt>
+            <dd>{snapshot.iceGathering}</dd>
+          </div>
+          <div className="info-row">
+            <dt>ice</dt>
+            <dd>{snapshot.ice}</dd>
+          </div>
+          <div className="info-row">
+            <dt>connection</dt>
+            <dd>{snapshot.connection}</dd>
+          </div>
+        </dl>
       </div>
 
       <details className="code-hint">
