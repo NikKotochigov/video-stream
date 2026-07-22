@@ -56,8 +56,6 @@
   <text x="1094" y="256" class="t">Внутри: кодеки, треки, ICE-адреса</text>
 
   <rect x="40" y="320" width="280" height="420" rx="16" fill="#FFFFFF" stroke="#0F766E" stroke-width="3"/>
-  <rect x="40" y="320" width="280" height="60" rx="16" fill="#CCFBF1"/>
-  <rect x="40" y="356" width="280" height="24" fill="#CCFBF1"/>
   <text x="180" y="358" text-anchor="middle" class="peer">Sender</text>
   <text x="180" y="386" text-anchor="middle" class="t">камера · addTrack</text>
 
@@ -100,8 +98,6 @@
   <text x="1050" y="684" text-anchor="middle" class="t">LAN: host хватает</text>
 
   <rect x="1280" y="320" width="280" height="420" rx="16" fill="#FFFFFF" stroke="#C2410C" stroke-width="3"/>
-  <rect x="1280" y="320" width="280" height="60" rx="16" fill="#FFEDD5"/>
-  <rect x="1280" y="356" width="280" height="24" fill="#FFEDD5"/>
   <text x="1420" y="358" text-anchor="middle" class="peer">Viewer</text>
   <text x="1420" y="386" text-anchor="middle" class="t">смотрит · ontrack</text>
 

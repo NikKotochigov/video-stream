@@ -8,10 +8,10 @@ const Step4InsertableStreams = lazy(() => import('./steps/Step4InsertableStreams
 const Step5WebRTCManual = lazy(() => import('./steps/Step5WebRTCManual'));
 
 const STEPS: StepMeta[] = [
-  { id: 1, title: 'Камера', subtitle: 'getUserMedia' },
-  { id: 2, title: 'Поток', subtitle: 'MediaStream & tracks' },
-  { id: 3, title: 'Canvas', subtitle: 'captureStream' },
-  { id: 4, title: 'Insertable', subtitle: 'VideoFrame' },
+  { id: 1, title: 'Камера', subtitle: '' },
+  { id: 2, title: 'Поток', subtitle: '' },
+  { id: 3, title: 'Canvas', subtitle: '' },
+  { id: 4, title: 'Insertable', subtitle: '' },
   { id: 5, title: 'WebRTC', subtitle: '' },
 ];
 

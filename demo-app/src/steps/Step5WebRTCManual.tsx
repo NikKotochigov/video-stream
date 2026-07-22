@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { VideoPreview } from '../components/VideoPreview';
 import { useStream } from '../context/StreamContext';
 import {
-  createManualPeer,
+  createSenderPeer,
+  createViewerPeer,
   formatSessionDescription,
   parseSessionDescription,
   type ManualPeerSession,
@@ -43,23 +44,9 @@ export default function Step5WebRTCManual() {
     setCopyStatus(null);
   }, []);
 
-  const startPeer = useCallback(
-    (peerRole: PeerRole) => {
-      const peer = createManualPeer({
-        role: peerRole,
-        localStream: peerRole === 'sender' ? stream : null,
-        callbacks: {
-          onStateChange: setSnapshot,
-          onRemoteStream: setRemoteStream,
-          onLocalSdp: (sdp) => setLocalSdpText(formatSessionDescription(sdp)),
-        },
-      });
-      sessionRef.current = peer;
-      setHasSession(true);
-      return peer;
-    },
-    [stream],
-  );
+  const onLocalSdp = useCallback((sdp: RTCSessionDescriptionInit) => {
+    setLocalSdpText(formatSessionDescription(sdp));
+  }, []);
 
   const changeRole = (next: PeerRole) => {
     if (next === role) return;
@@ -75,7 +62,18 @@ export default function Step5WebRTCManual() {
     setError(null);
     try {
       stopSession();
-      const peer = startPeer('sender');
+      if (!stream) {
+        throw new Error('Sender: нужен stream с камеры (Шаг 1)');
+      }
+      const peer = createSenderPeer({
+        localStream: stream,
+        callbacks: {
+          onStateChange: setSnapshot,
+          onLocalSdp,
+        },
+      });
+      sessionRef.current = peer;
+      setHasSession(true);
       await peer.createOffer();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -95,7 +93,15 @@ export default function Step5WebRTCManual() {
       if (offer.type !== 'offer') {
         throw new Error('Ожидался type: "offer"');
       }
-      const peer = startPeer('viewer');
+      const peer = createViewerPeer({
+        callbacks: {
+          onStateChange: setSnapshot,
+          onRemoteStream: setRemoteStream,
+          onLocalSdp,
+        },
+      });
+      sessionRef.current = peer;
+      setHasSession(true);
       await peer.acceptOfferAndCreateAnswer(offer);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

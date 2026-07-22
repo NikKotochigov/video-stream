@@ -16,24 +16,33 @@ export interface PeerSnapshot {
   connection: RTCPeerConnectionState;
 }
 
-export interface ManualPeerCallbacks {
+export interface SenderPeerCallbacks {
+  onStateChange: (snapshot: PeerSnapshot) => void;
+  onLocalSdp: (sdp: RTCSessionDescriptionInit) => void;
+}
+
+export interface ViewerPeerCallbacks {
   onStateChange: (snapshot: PeerSnapshot) => void;
   onRemoteStream: (stream: MediaStream | null) => void;
   onLocalSdp: (sdp: RTCSessionDescriptionInit) => void;
 }
 
-export interface ManualPeerSession {
-  role: PeerRole;
+export interface SenderPeerSession {
+  role: 'sender';
   stop: () => void;
-  /** Sender: create offer (with ICE gathered). */
   createOffer: () => Promise<RTCSessionDescriptionInit>;
-  /** Viewer: apply remote offer, create answer (with ICE gathered). */
+  acceptAnswer: (answer: RTCSessionDescriptionInit) => Promise<void>;
+}
+
+export interface ViewerPeerSession {
+  role: 'viewer';
+  stop: () => void;
   acceptOfferAndCreateAnswer: (
     offer: RTCSessionDescriptionInit,
   ) => Promise<RTCSessionDescriptionInit>;
-  /** Sender: apply remote answer. */
-  acceptAnswer: (answer: RTCSessionDescriptionInit) => Promise<void>;
 }
+
+export type ManualPeerSession = SenderPeerSession | ViewerPeerSession;
 
 function readSnapshot(pc: RTCPeerConnection): PeerSnapshot {
   return {
@@ -71,6 +80,33 @@ function waitForIceGatheringComplete(pc: RTCPeerConnection): Promise<void> {
   });
 }
 
+function attachStateListeners(
+  pc: RTCPeerConnection,
+  onStateChange: (snapshot: PeerSnapshot) => void,
+): () => void {
+  const notifyState = () => onStateChange(readSnapshot(pc));
+
+  pc.onconnectionstatechange = notifyState;
+  pc.oniceconnectionstatechange = notifyState;
+  pc.onicegatheringstatechange = notifyState;
+  pc.onsignalingstatechange = notifyState;
+
+  notifyState();
+  return notifyState;
+}
+
+async function localDescriptionPayload(
+  pc: RTCPeerConnection,
+  label: string,
+): Promise<RTCSessionDescriptionInit> {
+  await waitForIceGatheringComplete(pc);
+  const local = pc.localDescription;
+  if (!local) {
+    throw new Error(`localDescription пуст после ${label}`);
+  }
+  return { type: local.type, sdp: local.sdp };
+}
+
 export function parseSessionDescription(raw: string): RTCSessionDescriptionInit {
   const trimmed = raw.trim();
   if (!trimmed) {
@@ -88,24 +124,55 @@ export function formatSessionDescription(desc: RTCSessionDescriptionInit): strin
   return JSON.stringify({ type: desc.type, sdp: desc.sdp }, null, 2);
 }
 
-export function createManualPeer(options: {
-  role: PeerRole;
-  localStream?: MediaStream | null;
+/** Sender: камера → offer, потом принимает answer. Remote video не ждёт. */
+export function createSenderPeer(options: {
+  localStream: MediaStream;
   iceServers?: RTCIceServer[];
-  callbacks: ManualPeerCallbacks;
-}): ManualPeerSession {
-  const { role, localStream, callbacks } = options;
+  callbacks: SenderPeerCallbacks;
+}): SenderPeerSession {
+  const { localStream, callbacks } = options;
+  const iceServers = options.iceServers ?? DEFAULT_ICE_SERVERS;
+  const { onStateChange, onLocalSdp } = callbacks;
+
+  const pc = new RTCPeerConnection({ iceServers });
+  const notifyState = attachStateListeners(pc, onStateChange);
+
+  for (const track of localStream.getTracks()) {
+    pc.addTrack(track, localStream);
+  }
+
+  return {
+    role: 'sender',
+    stop: () => {
+      pc.close();
+      notifyState();
+    },
+    createOffer: async () => {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      const payload = await localDescriptionPayload(pc, 'offer');
+      onLocalSdp(payload);
+      notifyState();
+      return payload;
+    },
+    acceptAnswer: async (answer) => {
+      await pc.setRemoteDescription(answer);
+      notifyState();
+    },
+  };
+}
+
+/** Viewer: принимает offer → answer, показывает remote stream через ontrack. */
+export function createViewerPeer(options: {
+  iceServers?: RTCIceServer[];
+  callbacks: ViewerPeerCallbacks;
+}): ViewerPeerSession {
+  const { callbacks } = options;
   const iceServers = options.iceServers ?? DEFAULT_ICE_SERVERS;
   const { onStateChange, onRemoteStream, onLocalSdp } = callbacks;
 
   const pc = new RTCPeerConnection({ iceServers });
-
-  const notifyState = () => onStateChange(readSnapshot(pc));
-
-  pc.onconnectionstatechange = notifyState;
-  pc.oniceconnectionstatechange = notifyState;
-  pc.onicegatheringstatechange = notifyState;
-  pc.onsignalingstatechange = notifyState;
+  const notifyState = attachStateListeners(pc, onStateChange);
 
   pc.ontrack = (event) => {
     const remote =
@@ -113,63 +180,21 @@ export function createManualPeer(options: {
     onRemoteStream(remote);
   };
 
-  if (role === 'sender') {
-    if (!localStream) {
-      throw new Error('Sender: нужен localStream с камеры (Шаг 1)');
-    }
-    for (const track of localStream.getTracks()) {
-      pc.addTrack(track, localStream);
-    }
-  }
-
-  notifyState();
-
   return {
-    role,
+    role: 'viewer',
     stop: () => {
       pc.close();
       onRemoteStream(null);
       notifyState();
     },
-    createOffer: async () => {
-      if (role !== 'sender') {
-        throw new Error('createOffer только у sender');
-      }
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      await waitForIceGatheringComplete(pc);
-      const local = pc.localDescription;
-      if (!local) {
-        throw new Error('localDescription пуст после offer');
-      }
-      const payload: RTCSessionDescriptionInit = { type: local.type, sdp: local.sdp };
-      onLocalSdp(payload);
-      notifyState();
-      return payload;
-    },
     acceptOfferAndCreateAnswer: async (offer) => {
-      if (role !== 'viewer') {
-        throw new Error('acceptOffer только у viewer');
-      }
       await pc.setRemoteDescription(offer);
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
-      await waitForIceGatheringComplete(pc);
-      const local = pc.localDescription;
-      if (!local) {
-        throw new Error('localDescription пуст после answer');
-      }
-      const payload: RTCSessionDescriptionInit = { type: local.type, sdp: local.sdp };
+      const payload = await localDescriptionPayload(pc, 'answer');
       onLocalSdp(payload);
       notifyState();
       return payload;
-    },
-    acceptAnswer: async (answer) => {
-      if (role !== 'sender') {
-        throw new Error('acceptAnswer только у sender');
-      }
-      await pc.setRemoteDescription(answer);
-      notifyState();
     },
   };
 }
