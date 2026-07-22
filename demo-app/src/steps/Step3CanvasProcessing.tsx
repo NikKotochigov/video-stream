@@ -18,17 +18,13 @@ export default function Step3CanvasProcessing() {
   const [filterId, setFilterId] = useState<FilterId>('none');
   const [captureFps, setCaptureFps] = useState(30);
   const [outputStream, setOutputStream] = useState<MediaStream | null>(null);
-  const [drawFps, setDrawFps] = useState(0);
 
   const hasLiveVideo = stream?.getVideoTracks().some((t) => t.readyState === 'live');
-
-  const activeFilter = CANVAS_FILTERS.find((f) => f.id === filterId)!;
 
   const stopPipeline = useCallback(() => {
     pipelineRef.current?.stop();
     pipelineRef.current = null;
     setOutputStream(null);
-    setDrawFps(0);
   }, []);
 
   useEffect(() => {
@@ -65,12 +61,7 @@ export default function Step3CanvasProcessing() {
     pipelineRef.current = pipeline;
     setOutputStream(pipeline.outputStream);
 
-    const statsTimer = window.setInterval(() => {
-      setDrawFps(pipeline.getDrawFps());
-    }, 500);
-
     return () => {
-      window.clearInterval(statsTimer);
       pipeline.stop();
       pipelineRef.current = null;
     };
@@ -81,9 +72,6 @@ export default function Step3CanvasProcessing() {
       <header className="step-header">
         <p className="step-header__eyebrow">Шаг 3</p>
         <h2 className="step-header__title">Canvas + captureStream</h2>
-        <p className="step-header__desc">
-          Читаем кадры с камеры, рисуем на canvas, отдаём новый MediaStream.
-        </p>
       </header>
 
       {!stream || !hasLiveVideo ? (
@@ -125,37 +113,9 @@ export default function Step3CanvasProcessing() {
         </div>
       </div>
 
-      <p className="step-hint">
-        <code>drawImage</code> крутится в <code>requestAnimationFrame</code>;{' '}
-        <code>canvas.captureStream({captureFps})</code> задаёт частоту <em>выходного</em>{' '}
-        потока.
-      </p>
-
       <div className="dual-preview">
         <VideoPreview stream={stream} label="Input (камера)" />
         <VideoPreview stream={outputStream} label="Output (canvas)" />
-      </div>
-
-      <div className="info-panel pipeline-stats">
-        <h3 className="info-panel__title">Pipeline</h3>
-        <dl className="info-panel__list">
-          <div className="info-row">
-            <dt>Фильтр</dt>
-            <dd>{activeFilter.css}</dd>
-          </div>
-          <div className="info-row">
-            <dt>draw loop</dt>
-            <dd>~{drawFps} fps (rAF)</dd>
-          </div>
-          <div className="info-row">
-            <dt>captureStream</dt>
-            <dd>{captureFps} fps (задано)</dd>
-          </div>
-          <div className="info-row">
-            <dt>output tracks</dt>
-            <dd>{outputStream?.getVideoTracks().length ?? 0}</dd>
-          </div>
-        </dl>
       </div>
 
       <video

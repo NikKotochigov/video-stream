@@ -12,7 +12,7 @@ const STEPS: StepMeta[] = [
   { id: 2, title: 'Поток', subtitle: 'MediaStream & tracks' },
   { id: 3, title: 'Canvas', subtitle: 'captureStream' },
   { id: 4, title: 'Insertable', subtitle: 'VideoFrame' },
-  { id: 5, title: 'WebRTC', subtitle: '2 ПК · copy-paste' },
+  { id: 5, title: 'WebRTC', subtitle: '' },
 ];
 
 const STEP_COMPONENTS = [

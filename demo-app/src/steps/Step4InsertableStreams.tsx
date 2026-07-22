@@ -65,9 +65,6 @@ export default function Step4InsertableStreams() {
       <header className="step-header">
         <p className="step-header__eyebrow">Шаг 4</p>
         <h2 className="step-header__title">Insertable Streams</h2>
-        <p className="step-header__desc">
-          VideoFrame pipeline: Processor → Transform → Generator.
-        </p>
       </header>
 
       {!INSERTABLE_SUPPORTED ? (
@@ -98,11 +95,6 @@ export default function Step4InsertableStreams() {
           ))}
         </div>
       </div>
-
-      <p className="step-hint">
-        Каждый <code>VideoFrame</code> после обработки нужно <code>close()</code> — иначе утечка
-        памяти.
-      </p>
 
       <div className="dual-preview">
         <VideoPreview stream={stream} label="Input (камера)" />

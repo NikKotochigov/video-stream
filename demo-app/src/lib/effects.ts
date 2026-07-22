@@ -1,4 +1,4 @@
-export type FilterId = 'none' | 'grayscale' | 'sepia' | 'invert';
+export type FilterId = 'none' | 'grayscale' | 'sepia' | 'invert' | 'neon' | 'warm';
 
 export const CANVAS_FILTERS: ReadonlyArray<{
   id: FilterId;
@@ -9,12 +9,21 @@ export const CANVAS_FILTERS: ReadonlyArray<{
   { id: 'grayscale', label: 'Grayscale', css: 'grayscale(100%)' },
   { id: 'sepia', label: 'Sepia', css: 'sepia(100%)' },
   { id: 'invert', label: 'Invert', css: 'invert(100%)' },
+  {
+    id: 'neon',
+    label: 'Neon',
+    css: 'hue-rotate(280deg) saturate(220%) contrast(130%)',
+  },
+  {
+    id: 'warm',
+    label: 'Warm',
+    css: 'sepia(50%) saturate(160%) hue-rotate(-20deg) contrast(110%)',
+  },
 ];
 
 export interface CanvasPipeline {
   outputStream: MediaStream;
   stop: () => void;
-  getDrawFps: () => number;
 }
 
 export interface StartCanvasPipelineOptions {
@@ -26,7 +35,7 @@ export interface StartCanvasPipelineOptions {
 
 export function startCanvasPipeline(options: StartCanvasPipelineOptions): CanvasPipeline {
   const { sourceVideo, canvas, getFilterCss, captureFps } = options;
-  const ctx = canvas.getContext('2d', { alpha: false });
+  const ctx = canvas.getContext('2d');
 
   if (!ctx) {
     throw new Error('Canvas 2D context недоступен');
@@ -34,9 +43,6 @@ export function startCanvasPipeline(options: StartCanvasPipelineOptions): Canvas
 
   let running = true;
   let rafId = 0;
-  let frameCount = 0;
-  let lastStatsTime = performance.now();
-  let drawFps = 0;
 
   const outputStream = canvas.captureStream(captureFps);
 
@@ -57,14 +63,6 @@ export function startCanvasPipeline(options: StartCanvasPipelineOptions): Canvas
       syncCanvasSize();
       ctx.filter = getFilterCss();
       ctx.drawImage(sourceVideo, 0, 0, canvas.width, canvas.height);
-      frameCount += 1;
-    }
-
-    const now = performance.now();
-    if (now - lastStatsTime >= 1000) {
-      drawFps = frameCount;
-      frameCount = 0;
-      lastStatsTime = now;
     }
 
     rafId = requestAnimationFrame(draw);
@@ -79,6 +77,5 @@ export function startCanvasPipeline(options: StartCanvasPipelineOptions): Canvas
       cancelAnimationFrame(rafId);
       outputStream.getTracks().forEach((track) => track.stop());
     },
-    getDrawFps: () => drawFps,
   };
 }
